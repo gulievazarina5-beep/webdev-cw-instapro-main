@@ -2,6 +2,7 @@ const personalKey = "zarina-gulieva";
 const baseHost = "https://webdev-hw-api.vercel.app";
 const postsHost = `${baseHost}/api/v1/${personalKey}/instapro`;
 
+// Получение всех постов
 export function getPosts({ token }) {
   return fetch(postsHost, {
     method: "GET",
@@ -73,10 +74,10 @@ export function addLike({ token, postId }) {
   });
 }
 
-// Убрать лайк с поста
+// Убрать лайк с поста (ИСПРАВЛЕНО: метод POST и эндпоинт dislike)
 export function removeLike({ token, postId }) {
-  return fetch(`${postsHost}/${postId}/like`, {
-    method: "DELETE",
+  return fetch(`${postsHost}/${postId}/dislike`, {
+    method: "POST",
     headers: {
       Authorization: token,
     },
@@ -126,5 +127,3 @@ export function uploadImage({ file }) {
     return response.json();
   });
 }
-
-
