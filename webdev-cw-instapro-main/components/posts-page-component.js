@@ -3,6 +3,16 @@ import { renderHeaderComponent } from "./header-component.js";
 import { posts, goToPage, user } from "../index.js";
 import { addLike, removeLike } from "../api.js";
 
+// Функция для безопасного экранирования HTML-тегов (Защита от XSS)
+function escapeHtml(string) {
+  return String(string)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 export function renderPostsPageComponent({ appEl }) {
   console.log("Актуальный список постов:", posts);
 
@@ -13,21 +23,45 @@ export function renderPostsPageComponent({ appEl }) {
         ? "./assets/images/like-active.svg"
         : "./assets/images/like-not-active.svg";
 
+      // Безопасное экранирование данных из API
+      const safeUserName = escapeHtml(post.user.name);
+      const safeDescription = escapeHtml(post.description);
+
+      // Форматирование даты
       let formattedDate = post.createdAt;
-      if (window.dateFns && window.dateFns.formatDistanceToNow) {
-        formattedDate = window.dateFns.formatDistanceToNow(
-          new Date(post.createdAt),
-          {
-            locale: window.dateFns.locales.ru,
-          },
-        );
+      try {
+        if (window.dateFns && window.dateFns.formatDistanceToNow) {
+          const ruLocale =
+            (window.dateFns.locale && window.dateFns.locale.ru) ||
+            (window.dateFns.locales && window.dateFns.locales.ru);
+
+          formattedDate = window.dateFns.formatDistanceToNow(
+            new Date(post.createdAt),
+            {
+              locale: ruLocale,
+              addSuffix: true,
+            },
+          );
+        } else {
+          // Если библиотека из CDN не загрузилась, используем красивый нативный формат: "27 мая 2026 г., 14:11"
+          const postDate = new Date(post.createdAt);
+          formattedDate = postDate.toLocaleDateString("ru-RU", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+      } catch (dateError) {
+        console.error("Ошибка при обработке даты:", dateError);
       }
 
       return `
       <li class="post">
         <div class="post-header" data-user-id="${post.user.id}">
             <img src="${post.user.imageUrl}" class="post-header__user-image">
-            <p class="post-header__user-name">${post.user.name}</p>
+            <p class="post-header__user-name">${safeUserName}</p>
         </div>
         <div class="post-image-container">
           <img class="post-image" src="${post.imageUrl}">
@@ -41,11 +75,11 @@ export function renderPostsPageComponent({ appEl }) {
           </p>
         </div>
         <p class="post-text">
-          <span class="user-name">${post.user.name}</span>
-          ${post.description}
+          <span class="user-name">${safeUserName}</span>
+          ${safeDescription}
         </p>
         <p class="post-date">
-          ${formattedDate} назад
+          ${formattedDate}
         </p>
       </li>
     `;
@@ -74,7 +108,7 @@ export function renderPostsPageComponent({ appEl }) {
     });
   }
 
-  // ОБРАБОТКА НАЖАТИЯ НА ЛАЙК (ЖЕЛЕЗОБЕТОННАЯ ВЕРСИЯ)
+  // ОБРАБОТКА НАЖАТИЯ НА ЛАЙК
   for (let likeBtn of document.querySelectorAll(".like-button")) {
     likeBtn.addEventListener("click", () => {
       if (!user) {
@@ -88,28 +122,31 @@ export function renderPostsPageComponent({ appEl }) {
 
       if (!currentPost) return;
 
-      // Если лайк уже СТОИТ — снимаем его локально и уменьшаем счётчик
+      const token = `Bearer ${user.token}`;
+
       if (currentPost.isLiked) {
-        currentPost.isLiked = false;
-        if (currentPost.likes && currentPost.likes.length > 0) {
-          currentPost.likes.pop(); // Просто удаляем один лайк из массива, чтобы цифра уменьшилась
-        }
-        renderPostsPageComponent({ appEl });
-      } else {
-        // Если лайка НЕТ — отправляем штатный запрос POST на сервер
-        const token = `Bearer ${user.token}`;
-        addLike({ token, postId })
+        removeLike({ token, postId })
           .then((updatedPost) => {
-            posts[postIndex] = updatedPost.post;
+            posts[postIndex] = updatedPost.post
+              ? updatedPost.post
+              : updatedPost;
             renderPostsPageComponent({ appEl });
           })
           .catch((error) => {
-            console.error(error);
-            // Если сервер выдал ошибку, всё равно переключаем в интерфейсе для красоты
-            currentPost.isLiked = true;
-            if (!currentPost.likes) currentPost.likes = [];
-            currentPost.likes.push({ name: user.name });
+            console.error("Ошибка при снятии лайка:", error);
+            alert("Не удалось убрать лайк, попробуйте позже.");
+          });
+      } else {
+        addLike({ token, postId })
+          .then((updatedPost) => {
+            posts[postIndex] = updatedPost.post
+              ? updatedPost.post
+              : updatedPost;
             renderPostsPageComponent({ appEl });
+          })
+          .catch((error) => {
+            console.error("Ошибка при установке лайка:", error);
+            alert("Не удалось поставить лайк, попробуйте позже.");
           });
       }
     });
